@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+      integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      #map {
+        width: 100%;
+        height: 100vh;
+      }
+
+      /* Custom tooltip styling */
+      .custom-tooltip {
+        background-color: red;
+        color: #f7f4f4;
+        border: none;
+        box-shadow: none;
+      }
+
+      .custom-tooltip2 {
+        background-color: rgb(68, 0, 255);
+        color: #fdf7f7;
+        border: none;
+        box-shadow: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <script src="./leaflet.js"></script>
+    <script src="./Control.Geocoder.js"></script>
+    <script>
+      // Main application controller
+      (function () {
+        // Constants
+        const UPDATE_INTERVAL = 5000; // 5 seconds
+        const options = {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0,
+        };
+
+        // Variables that need to persist (use let for block-scoped variables that change)
+        let map_init = null;
+        let osm = null;
+        let featureGroup = null;
+        let updateInterval = null;
+        let count = 0;
+
+        // Arrays to store coordinates (use const for references that won't change)
+        const latlngs = [];
+        const latlngs2 = [];
+
+        // Error callback function
+        function error(error) {
+          console.error(`Error getting geolocation: ${error.message}`);
+        }
+
+        // Success callback function
+        function success(position) {
+          console.log(position);
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+
+          // Initialize map only once
+          if (!map_init) {
+            map_init = L.map("map", {
+              center: [latitude, longitude],
+              zoom: 10,
+            });
+
+            osm = L.tileLayer(
+              "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+              {
+                attribution: "savindu.pasintha",
+              }
+            ).addTo(map_init);
+
+            L.Control.geocoder().addTo(map_init);
+            featureGroup = L.featureGroup().addTo(map_init);
+          }
+
+          // Start the interval for updates if not already running
+          if (!updateInterval) {
+            updateInterval = setInterval(() => {
+              updatePosition(latitude, longitude);
+            }, UPDATE_INTERVAL);
+
+            // Initial update
+            updatePosition(latitude, longitude);
+          }
+        }
+
+        function updatePosition(baseLat, baseLng) {
+          count += 0.001;
+          const randomLatOffset = 0 // (Math.random() - 0.5) * 0.01;
+          const randomLngOffset = 0 // (Math.random() - 0.5) * 0.01;
+
+          const geoData = {
+            coords: {
+              latitude: baseLat + count + randomLatOffset,
+              longitude: baseLng + count + randomLngOffset,
+              accuracy: 50,
+            },
+          };
+
+          getPosition(geoData);
+        }
+
+        function getPosition(position) {
+          //   if (!featureGroup) return;
+
+          // Clear previous layers
+          //   featureGroup.clearLayers();
+
+          const lat = position.coords.latitude;
+          const long = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+
+          const v = Math.random() / 1000;
+          const w = (Math.random() * 10) / 1000;
+
+          latlngs.push([lat, long]);
+          latlngs2.push([lat - v, long + w]);
+
+          // First API call for primary marker
+          fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${long}&zoom=18&addressdetails=1`,
+          )
+            .then((response) => response.json())
+            .then((data) => {
+              const locationName = data.display_name;
+              console.log("Location Name:", locationName);
+
+              const redIcon = L.icon({
+                iconUrl:
+                  "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png",
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                tooltipAnchor: [16, -28],
+                shadowUrl:
+                  "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                shadowSize: [41, 41],
+              });
+
+              const marker = L.marker([lat, long], {
+                title: "S",
+                icon: redIcon,
+              });
+              marker
+                .bindTooltip(
+                  `<strong>${
+                    latlngs.length - 1
+                  } S:</strong> <br> <strong>${locationName}</strong> <br>Latitude: ${lat} Longitude: ${long}`,
+                  {
+                    permanent: true,
+                    direction: "left",
+                    className: "custom-tooltip",
+                  }
+                )
+                .openTooltip();
+              marker.bindPopup(`Savindu : ${lat} ${long}`).openPopup();
+
+              const polyline = L.polyline(latlngs, { color: "red" });
+              const circle = L.circle([lat, long], {
+                radius: 25,
+                color: "red",
+              });
+
+              featureGroup.addLayer(marker);
+              featureGroup.addLayer(polyline);
+              featureGroup.addLayer(circle);
+
+              // Second API call for secondary marker
+              return fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${
+                  lat - v
+                }&lon=${long + w}&zoom=18&addressdetails=1`
+              );
+            })
+            .then((response) => response.json())
+            .then((data) => {
+              const locationName2 = data.display_name;
+              console.log("Location Name2:", locationName2);
+
+              const blueIcon = L.icon({
+                iconUrl:
+                  "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png",
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                tooltipAnchor: [16, -28],
+                shadowUrl:
+                  "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+                shadowSize: [41, 41],
+              });
+
+              const marker2 = L.marker([lat - v, long + w], {
+                title: "P",
+                icon: blueIcon,
+              });
+              marker2
+                .bindTooltip(
+                  `<strong>${
+                    latlngs2.length - 1
+                  } P:</strong> <br> <strong>${locationName2}</strong> <br>Latitude: ${
+                    lat - v
+                  } Longitude: ${long + w}`,
+                  {
+                    permanent: true,
+                    direction: "right",
+                    className: "custom-tooltip2",
+                  }
+                )
+                .openTooltip();
+
+              const polyline2 = L.polyline(latlngs2, { color: "blue" });
+              const circle2 = L.circle([lat - v, long + w], {
+                radius: 25,
+                color: "blue",
+              });
+
+              featureGroup.addLayer(marker2);
+              featureGroup.addLayer(polyline2);
+              featureGroup.addLayer(circle2);
+
+              console.log(
+                `Your coordinate is: Lat: ${lat} Long: ${long} Accuracy: ${accuracy}`
+              );
+            })
+            .catch((error) =>
+              console.error("Error fetching data:", error.message)
+            );
+        }
+
+        // Cleanup on page unload
+        window.addEventListener("beforeunload", function () {
+          if (updateInterval) {
+            clearInterval(updateInterval);
+          }
+        });
+
+        // Initialize geolocation
+        if (window.navigator && window.navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(success, error, options);
+        } else {
+          console.log("Your browser doesn't support geolocation feature!");
+        }
+      })();
+    </script>
+  </body>
+</html>
